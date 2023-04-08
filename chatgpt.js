@@ -51,7 +51,7 @@ export async function main(event, context) {
         <FromUserName><![CDATA[${tousername}]]></FromUserName>
         <CreateTime>${Date.now()}</CreateTime>
         <MsgType><![CDATA[text]]></MsgType>
-        <Content><![CDATA[${"回答还没有生成，请稍后再回复1，确定回答是否生成。"}]]></Content>
+        <Content><![CDATA[${"回答还没有生成，请稍后再回复1，确定回答是否已经生成。"}]]></Content>
       </xml>
     `;
   }
@@ -92,7 +92,7 @@ export async function main(event, context) {
         <FromUserName><![CDATA[${tousername}]]></FromUserName>
         <CreateTime>${Date.now()}</CreateTime>
         <MsgType><![CDATA[text]]></MsgType>
-        <Content><![CDATA[${"返回内容过长，请回复1来确定回答是否生成，回答生成完毕后回复继续以获取最新结果!"}]]></Content>
+        <Content><![CDATA[${"返回内容过长，请回复1来确定回答是否已经生成"}]]></Content>
       </xml>
     `;
   }
