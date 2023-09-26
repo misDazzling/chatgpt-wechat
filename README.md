@@ -5,9 +5,22 @@
 
 https://blog.csdn.net/weixin_42560424/article/details/129873490
 
-**实现效果：**
+# **更新日期：2023-09-26**
+
+- 一：更换了代码平台：使用aircode，原本的Laf平台要收费或者免费的会时不时暂停容器服务。
+- 二：优化了代码，响应速度提升。
+
+**优化后实现效果**：![img](https://img.misdazzling.cn/i/2023/09/26/vvx1gm-2.webp)
+
+
+
+**之前的实现效果：**
 
 ![aaa54ee232729665602bd330f865064](https://cdn.jsdelivr.net/gh/misdazzling/photobed@main/img/aaa54ee232729665602bd330f865064.jpg)
+
+
+
+# 
 
 # 1、前置工作
 
@@ -25,86 +38,61 @@ https://kf.qq.com/faq/120911VrYVrA151009eIrYvy.html
 
 https://eylink.cn/
 
-# 2.将chatgpt接入微信公众号
+## **2.1使用aircode平台**
 
-## 2.1 注册Laf平台账号
+网址：https://aircode.io/dashboard
 
-laf官网：https://laf.dev
+![img](https://img.misdazzling.cn/i/2023/09/26/vxfb9x-2.webp)
 
-注册登录之后，点击新建，建立一个应用。
+![img](https://img.misdazzling.cn/i/2023/09/26/w0ojpd-2.webp)
 
-![image-20230408035635487](https://cdn.jsdelivr.net/gh/misdazzling/photobed@main/img/image-20230408035635487.png)
+按照图片，新建js文件,然后复制我的代码，修改代码的第六行和第七行。
 
-输入应用名称，点击立即创建。
+第七行token是微信公众号后台你自己填的令牌（token）。
 
+记住上面的这个链接，后面要用，是微信公众号的服务器地址（URL）。
 
-
-![image-20230408035816457](https://cdn.jsdelivr.net/gh/misdazzling/photobed@main/img/image-20230408035816457.png)
-
-
-
-点击开发，进入应用开发界面。
-
-![image-20230408035845977](https://cdn.jsdelivr.net/gh/misdazzling/photobed@main/img/image-20230408035845977.png)
-
-
-
-然后先把chatgpt的依赖安装一下
-
-![image-20230408035935778](https://cdn.jsdelivr.net/gh/misdazzling/photobed@main/img/image-20230408035935778.png)
-
-
-
-点击加号，搜索chatgpt，选中第一个，点击安装并重启
-
-
-
-![image-20230408040007862](https://cdn.jsdelivr.net/gh/misdazzling/photobed@main/img/image-20230408040007862.png)
-
-
-
-然后我们点击函数，函数列表右侧的加号，新增一个可以介入微信公众号的chatgpt云函数。
-
-![image-20230408040130475](https://cdn.jsdelivr.net/gh/misdazzling/photobed@main/img/image-20230408040130475.png)
-
-点击确定。
-
-
-
-云函数里面的代码是我放在chatgpt.js里面的代码。
-
-20行ChatGPTAPI填自己的。
-
-![image-20230408041210720](https://cdn.jsdelivr.net/gh/misdazzling/photobed@main/img/image-20230408041210720.png)
-
-然后点击右上角的发布。
-
-
+然后Deploy部署。![image-20230926194811727](https://img.misdazzling.cn/i/2023/09/26/w7ukpl-2.webp)
 
 ## 2.2 在微信公众平台操作
 
 登录微信公众平台，点开左侧的设置与开发，点击基本设置，服务器配置那里点击修改配置。
 
-![image-20230408040856004](https://cdn.jsdelivr.net/gh/misdazzling/photobed@main/img/image-20230408040856004.png)
+![image-20230926194622092](https://img.misdazzling.cn/i/2023/09/26/w6pzar-2.webp)
 
-服务器地址（URL）填Laf里面的接口。
+服务器地址（URL）填Aircode里面的接口。看下图，就是中间上面的这个链接。
 
-![image-20230408041106032](https://cdn.jsdelivr.net/gh/misdazzling/photobed@main/img/image-20230408041106032.png)
+![img](https://img.misdazzling.cn/i/2023/09/26/w0ojpd-2.webp)
 
 
 
-令牌(Token)：自己填写，然后写在云函数的19行 token里面。
+令牌(Token)：自己填写，然后写在云函数的6行 token里面。
 
-然后Laf的云函数重新点发布。
+然后aircode的云函数重新点Deploy。
 
 下边的EncodingAESKey点击右侧随机生成就行，然后点击提交。
 
 
 
-![image-20230408041634573](https://cdn.jsdelivr.net/gh/misdazzling/photobed@main/img/image-20230408041634573.png)
+![image-20230926194648840](https://img.misdazzling.cn/i/2023/09/26/w6vogq-2.webp)
 
 返回token校验成功的话，我们就点击启用
 
-![image-20230408041713094](https://cdn.jsdelivr.net/gh/misdazzling/photobed@main/img/image-20230408041713094.png)
+![image-20230926194655582](https://img.misdazzling.cn/i/2023/09/26/w6x7d5-2.webp)
 
 启用成功之后就可以在公众号对话框与ChatGPT对话啦，快去试试吧！
+
+
+
+
+
+
+
+
+
+
+
+------
+
+
+

@@ -1,131 +1,244 @@
-// å¼•å…¥å¿…è¦çš„åº“
-import * as crypto from 'crypto';
-import cloud from '@lafjs/cloud';
+const { db } = require('aircode');
+const axios = require('axios');
+const sha1 = require('sha1');
+const xml2js = require('xml2js');
 
-// åˆ›å»ºæ•°æ®åº“è¿æ¥
-const db = cloud.database();
-// æ ¡éªŒå¾®ä¿¡æœåŠ¡å™¨å‘é€çš„æ¶ˆæ¯æ˜¯å¦åˆæ³•
-function verifySignature(signature, timestamp, nonce, token) {
-  const arr = [token, timestamp, nonce].sort();
-  const str = arr.join('');
-  const sha1 = crypto.createHash('sha1');
-  sha1.update(str);
-  return sha1.digest('hex') === signature;
+const TOKEN = process.env.TOKEN || '*********' // Î¢ĞÅ·şÎñÆ÷ÅäÖÃ Token ×¢ÒâÕâ¸ötoken¿ÉÒÔËæ±ãÉèÖÃµ«ÊÇ±ØĞëÒªÓëÎ¢ĞÅ¹«ÖÚºÅºóÌ¨ÅäÖÃÒ»ÖÂ
+const OPENAI_KEY = process.env.OPENAI_KEY || '****************'; // OpenAI µÄ Key
+
+const OPENAI_MODEL = process.env.MODEL || "gpt-3.5-turbo"; // Ê¹ÓÃµÄ AI Ä£ĞÍ
+const OPENAI_MAX_TOKEN = process.env.MAX_TOKEN || 1024; // ×î´ó token µÄÖµ
+
+const LIMIT_HISTORY_MESSAGES = 50 // ÏŞÖÆÀúÊ·»á»°×î´óÌõÊı
+const CONVERSATION_MAX_AGE = 60 * 60 * 1000 // Í¬Ò»»á»°ÔÊĞí×î´óÖÜÆÚ£¬Ä¬ÈÏ£º1 Ğ¡Ê±
+const ADJACENT_MESSAGE_MAX_INTERVAL = 10 * 60 * 1000 //Í¬Ò»»á»°ÏàÁÚÁ½ÌõÏûÏ¢µÄ×î´óÔÊĞí¼ä¸ôÊ±¼ä£¬Ä¬ÈÏ£º10 ·ÖÖÓ
+
+const UNSUPPORTED_MESSAGE_TYPES = {
+  image: 'Ôİ²»Ö§³ÖÍ¼Æ¬ÏûÏ¢',
+  voice: 'Ôİ²»Ö§³ÖÓïÒôÏûÏ¢',
+  video: 'Ôİ²»Ö§³ÖÊÓÆµÏûÏ¢',
+  music: 'Ôİ²»Ö§³ÖÒôÀÖÏûÏ¢',
+  news: 'Ôİ²»Ö§³ÖÍ¼ÎÄÏûÏ¢',
 }
 
-// å¤„ç†æ¥æ”¶åˆ°çš„æ¶ˆæ¯
-export async function main(event, context) {
-  const { signature, timestamp, nonce, echostr } = event.query;
-  const token = 'ä½ çš„token';
-  const { ChatGPTAPI } = await import('chatgpt')
-  const api = new ChatGPTAPI({ apiKey: "ä½ çš„APIkey" })
-  
-  // éªŒè¯æ¶ˆæ¯æ˜¯å¦åˆæ³•ï¼Œè‹¥ä¸åˆæ³•åˆ™è¿”å›é”™è¯¯ä¿¡æ¯
-  if (!verifySignature(signature, timestamp, nonce, token)) {
-    return 'Invalid signature';
-  }
+const WAIT_MESSAGE = `´¦ÀíÖĞ ... \n\nÇëÉÔµÈ¼¸Ãëºó·¢ËÍ¡¾1¡¿²é¿´»Ø¸´\nÈç¹û»Ø¸´³¤Ê±¼äÎ´¸üĞÂ£¬Çë³¢ÊÔÖØĞÂÌáÎÊ¡£`
+const NO_MESSAGE = `ÔİÎŞÄÚÈİ£¬ÇëÉÔºó»Ø¸´¡¾1¡¿ÔÙÊÔ`
+const CLEAR_MESSAGE = `? ¼ÇÒäÒÑÇå³ı`
+const HELP_MESSAGE =  `ChatGPT Ö¸ÁîÊ¹ÓÃÖ¸ÄÏ
+   |    ¹Ø¼ü×Ö  |   ¹¦ÄÜ         |
+   |      1    | ÉÏÒ»´ÎÎÊÌâµÄ»Ø¸´ |
+   |   /clear  |    Çå³ıÉÏÏÂÎÄ   |
+   |   /help   |   »ñÈ¡¸ü¶à°ïÖú  |
+`
 
-  // å¦‚æœæ˜¯é¦–æ¬¡éªŒè¯ï¼Œåˆ™è¿”å› echostr ç»™å¾®ä¿¡æœåŠ¡å™¨
-  if (echostr) {
-    return echostr;
-  }
+const Message = db.table('messages')
+const Event = db.table('events')
 
-  // å¤„ç†æ¥æ”¶åˆ°çš„æ¶ˆæ¯
-  const { fromusername, tousername, content } = event.body.xml;
-  
-  // æŸ¥è¯¢æ•°æ®åº“ä¸­æ˜¯å¦æœ‰ä¸Šä¸€æ¬¡çš„èŠå¤©è®°å½•
-  //æ ¹æ®ç”¨æˆ·åå»ºç«‹æ•°æ®åº“ï¼Œåˆ†å¼€ç”¨æˆ·çš„è¯·æ±‚ã€‚
-  console.log(fromusername[0]);
-  const db = cloud.database();
-  const collectionName = fromusername[0];
-  const collection = db.collection(collectionName);
-  const chatData = await db.collection(collectionName).get();
-  const lastMessage = chatData.data[chatData.data.length - 1];
 
- // å¦‚æœç”¨æˆ·å‘é€çš„æ˜¯â€œ1â€ï¼Œåˆ™åˆ¤æ–­å›ç­”æ˜¯å¦ä»¥åŠç”Ÿæˆã€‚
- if (content[0] === '1'&&chatData.data.length==0) {
-    
-    return `
-      <xml>
-        <ToUserName><![CDATA[${fromusername}]]></ToUserName>
-        <FromUserName><![CDATA[${tousername}]]></FromUserName>
-        <CreateTime>${Date.now()}</CreateTime>
-        <MsgType><![CDATA[text]]></MsgType>
-        <Content><![CDATA[${"å›ç­”è¿˜æ²¡æœ‰ç”Ÿæˆï¼Œè¯·ç¨åå†å›å¤1ï¼Œç¡®å®šå›ç­”æ˜¯å¦å·²ç»ç”Ÿæˆã€‚"}]]></Content>
-      </xml>
-    `;
-  }
-  if (content[0] === '1'&&chatData.data.length!=0) {
-    
-    return `
-      <xml>
-        <ToUserName><![CDATA[${fromusername}]]></ToUserName>
-        <FromUserName><![CDATA[${tousername}]]></FromUserName>
-        <CreateTime>${Date.now()}</CreateTime>
-        <MsgType><![CDATA[text]]></MsgType>
-        <Content><![CDATA[${"å›ç­”å·²ç»ç”Ÿæˆï¼Œè¯·å›å¤ç»§ç»­ï¼Œä»¥è·å¾—å›ç­”ã€‚"}]]></Content>
-      </xml>
-    `;
-  }
-  // å¦‚æœç”¨æˆ·å‘é€çš„æ˜¯â€œç»§ç»­â€ï¼Œåˆ™è¿”å›ä¸Šä¸€æ¬¡çš„èŠå¤©è®°å½•
-  if (content[0] === 'ç»§ç»­' && lastMessage) {
-    //æ¸…ç©ºæ•°æ®åº“w
-    await db.collection(collectionName).where({}).remove();
-    return `
-      <xml>
-        <ToUserName><![CDATA[${fromusername}]]></ToUserName>
-        <FromUserName><![CDATA[${tousername}]]></FromUserName>
-        <CreateTime>${Date.now()}</CreateTime>
-        <MsgType><![CDATA[text]]></MsgType>
-        <Content><![CDATA[${lastMessage.data.message}]]></Content>
-      </xml>
-    `;
-  }
+const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
-  // è°ƒç”¨ ChatGPT API è¿›è¡ŒèŠå¤©
-  const startTime = Date.now();
-  // å¦‚æœå“åº”æ—¶é—´å¤§äºç­‰äº 5sï¼Œåˆ™è¿”å›æç¤ºä¿¡æ¯ç»™ç”¨æˆ·
-  if(startTime - (timestamp+"000") > 5000) {
-    return `
-      <xml>
-        <ToUserName><![CDATA[${fromusername}]]></ToUserName>
-        <FromUserName><![CDATA[${tousername}]]></FromUserName>
-        <CreateTime>${Date.now()}</CreateTime>
-        <MsgType><![CDATA[text]]></MsgType>
-        <Content><![CDATA[${"è¿”å›å†…å®¹è¿‡é•¿ï¼Œè¯·å›å¤1æ¥ç¡®å®šå›ç­”æ˜¯å¦å·²ç»ç”Ÿæˆ"}]]></Content>
-      </xml>
-    `;
-  }
-  const response = await api.sendMessage(content[0]);
-  const endTime = Date.now();
-
-  // å¦‚æœå“åº”æ—¶é—´å°äº 5sï¼Œåˆ™ç›´æ¥è¿”å›ç»“æœç»™ç”¨æˆ·
-  if (endTime - startTime < 5000) {
-    return `
-      <xml>
-        <ToUserName><![CDATA[${fromusername}]]></ToUserName>
-        <FromUserName><![CDATA[${tousername}]]></FromUserName>
-        <CreateTime>${Date.now()}</CreateTime>
-        <MsgType><![CDATA[text]]></MsgType>
-        <Content><![CDATA[${response.text}]]></Content>
-      </xml>
-    `;
-  }else {
-    // å¦‚æœå“åº”æ—¶é—´å¤§äºç­‰äº 5sï¼Œåˆ™å°†ç»“æœå­˜å…¥æ•°æ®åº“
-    await db.collection(collectionName).add({ data: { message: response.text } });
-    return `
-      <xml>
-        <ToUserName><![CDATA[${fromusername}]]></ToUserName>
-        <FromUserName><![CDATA[${tousername}]]></FromUserName>
-        <CreateTime>${Date.now()}</CreateTime>
-        <MsgType><![CDATA[text]]></MsgType>
-        <Content><![CDATA[${"è¿”å›å†…å®¹å·²ç”Ÿæˆï¼Œå¯ä»¥å›å¤ç»§ç»­ä»¥è·å–æœ€æ–°ç»“æœã€‚"}]]></Content>
-      </xml>
-    `;
-  }
-
- 
-
-  
+function toXML(payload, content) {
+  const timestamp = Date.now();
+  const { ToUserName: fromUserName, FromUserName: toUserName } = payload;
+  return `
+  <xml>
+    <ToUserName><![CDATA[${toUserName}]]></ToUserName>
+    <FromUserName><![CDATA[${fromUserName}]]></FromUserName>
+    <CreateTime>${timestamp}</CreateTime>
+    <MsgType><![CDATA[text]]></MsgType>
+    <Content><![CDATA[${content}]]></Content>
+  </xml>
+  `
 }
 
+
+async function processCommandText({ sessionId, question }) {
+  // ÇåÀíÀúÊ·»á»°
+  if (question === '/clear') {
+    const now = new Date();
+    await Message.where({ sessionId }).set({ deletedAt: now }).save()
+    return CLEAR_MESSAGE;
+  }
+  else {
+    return HELP_MESSAGE;
+  }
+}
+
+
+// ¹¹½¨ prompt
+async function buildOpenAIPrompt(sessionId, question) {
+  let prompt = [];
+
+  // »ñÈ¡×î½üµÄÀúÊ·»á»°
+  const now = new Date();
+  // const earliestAt = new Date(now.getTime() - CONVERSATION_MAX_AGE)
+  const historyMessages = await Message.where({
+    sessionId,
+    deletedAt: db.exists(false),
+  //  createdAt: db.gt(earliestAt),
+  }).sort({ createdAt: -1 }).limit(LIMIT_HISTORY_MESSAGES).find();
+
+  let lastMessageTime = now;
+  let tokenSize = 0;
+  for (const message of historyMessages) {
+    // Èç¹ûÀúÊ·»á»°¼ÇÂ¼´óÓÚ OPENAI_MAX_TOKEN »ò Á½´Î»á»°¼ä¸ô³¬¹ı 10 ·ÖÖÓ£¬ÔòÍ£Ö¹Ìí¼ÓÀúÊ·»á»°
+    const timeSinceLastMessage = lastMessageTime ? lastMessageTime - message.createdAt : 0;
+    if (tokenSize > OPENAI_MAX_TOKEN || timeSinceLastMessage > ADJACENT_MESSAGE_MAX_INTERVAL) {
+      break
+    }
+
+    prompt.unshift({ role: 'assistant', content: message.answer, });
+    prompt.unshift({ role: 'user', content: message.question, });
+    tokenSize += message.token;
+    lastMessageTime = message.createdAt;
+  }
+
+  prompt.push({ role: 'user', content: question });
+  return prompt;
+}
+
+
+// »ñÈ¡ OpenAI API µÄ»Ø¸´
+async function getOpenAIReply(prompt) {
+  const data = JSON.stringify({
+    model: OPENAI_MODEL,
+    messages: prompt
+  });
+
+  const config = {
+    method: 'post',
+    maxBodyLength: Infinity,
+    url: 'https://api.openai.com/v1/chat/completions',
+    headers: {
+      Authorization: `Bearer ${OPENAI_KEY}`,
+      "Content-Type": "application/json",
+    },
+    data: data,
+    timeout: 50000
+  };
+
+
+  try {
+      const response = await axios(config);
+      console.debug(`[OpenAI response] ${response.data}`);
+      if (response.status === 429) {
+        return {
+          error: 'ÎÊÌâÌ«¶àÁË£¬ÎÒÓĞµãÑ£ÔÎ£¬ÇëÉÔºóÔÙÊÔ'
+        }
+      }
+      // È¥³ı¶àÓàµÄ»»ĞĞ
+      return {
+        answer: response.data.choices[0].message.content.replace("\n\n", ""),
+      }
+  } catch(e){
+     console.error(e.response.data);
+     return {
+      error: "ÎÊÌâÌ«ÄÑÁË ³ö´íÁË. (u§¥u¡¨).",
+    }
+  }
+
+}
+
+// ´¦ÀíÎÄ±¾»Ø¸´ÏûÏ¢
+async function replyText(message) {
+  const { question, sessionId, msgid } = message;
+
+  // ¼ì²éÊÇ·ñÊÇÖØÊÔ²Ù×÷
+  if (question === '1') {
+    const now = new Date();
+    // const earliestAt = new Date(now.getTime() - CONVERSATION_MAX_AGE)
+    const lastMessage = await Message.where({
+      sessionId,
+      deletedAt: db.exists(false),
+    //  createdAt: db.gt(earliestAt),
+    }).sort({ createdAt: -1 }).findOne();
+    if (lastMessage) {
+      return `${lastMessage.question}\n------------\n${lastMessage.answer}`;
+    }
+
+    return NO_MESSAGE;
+  }
+
+  // ·¢ËÍÖ¸Áî
+  if (question.startsWith('/')) {
+    return await processCommandText(message);
+  }
+
+  // OpenAI »Ø¸´ÄÚÈİ
+  const prompt = await buildOpenAIPrompt(sessionId, question);
+  const { error, answer } = await getOpenAIReply(prompt);
+  console.debug(`[OpenAI reply] sessionId: ${sessionId}; prompt: ${prompt}; question: ${question}; answer: ${answer}`);
+  if (error) {
+    console.error(`sessionId: ${sessionId}; question: ${question}; error: ${error}`);
+    return error;
+  }
+
+  // ±£´æÏûÏ¢
+  const token = question.length + answer.length;
+  const result = await Message.save({ token, answer, ...message });
+  console.debug(`[save message] result: ${result}`);
+
+  return `${question}\n------------\n${answer}`;
+}
+
+
+
+// ´¦ÀíÎ¢ĞÅÊÂ¼şÏûÏ¢
+module.exports = async function(params, context) {
+  const requestId = context.headers['x-aircode-request-id'];
+
+  // Ç©ÃûÑéÖ¤
+  if (context.method === 'GET') {
+    const _sign = sha1(new Array(TOKEN, params.timestamp, params.nonce).sort().join(''))
+    if (_sign !== params.signature) {
+      context.status(403)
+      return 'Forbidden'
+    }
+
+    return params.echostr
+  }
+
+  // ½âÎö XML Êı¾İ
+  let payload;
+  xml2js.parseString(params, { explicitArray: false }, function(err, result) {
+    if (err) {
+      console.error(`[${requestId}] parse xml error: `, err);
+      return
+    }
+    payload = result.xml;
+  })
+  console.debug(`[${requestId}] payload: `, payload);
+
+  // ÎÄ±¾
+  if (payload.MsgType === 'text') {
+    const newMessage = {
+      msgid: payload.MsgId,
+      question: payload.Content.trim(),
+      username: payload.FromUserName,
+      sessionId: payload.FromUserName,
+    }
+
+    // ĞŞ¸´ÇëÇóÏìÓ¦³¬Ê±ÎÊÌâ£ºÈç¹û 5 ÃëÄÚ AI Ã»ÓĞ»Ø¸´£¬Ôò·µ»ØµÈ´ıÏûÏ¢
+    const responseText = await Promise.race([
+      replyText(newMessage),
+      sleep(4000.0).then(() => `${newMessage.question}\n------------\n${WAIT_MESSAGE}`),
+    ]);
+    return toXML(payload, responseText);
+  }
+
+  // ÊÂ¼ş
+  if (payload.MsgType === 'event') {
+    // ¹«ÖÚºÅ¶©ÔÄ
+    if (payload.Event === 'subscribe') {
+      return toXML(payload, HELP_MESSAGE);
+    }
+  }
+
+  // Ôİ²»Ö§³ÖµÄÏûÏ¢ÀàĞÍ
+  if (payload.MsgType in UNSUPPORTED_MESSAGE_TYPES) {
+    const responseText = UNSUPPORTED_MESSAGE_TYPES[payload.MsgType];
+    return toXML(payload, responseText);
+  }
+
+  return 'success'
+}
